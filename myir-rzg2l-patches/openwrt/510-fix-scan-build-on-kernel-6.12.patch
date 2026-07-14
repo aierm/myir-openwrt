@@ -1,0 +1,25 @@
+--- a/net/wireless/scan.c
++++ b/net/wireless/scan.c
+@@ -11,7 +11,9 @@
+ #include <linux/module.h>
+ #include <linux/netdevice.h>
+ #include <linux/wireless.h>
+ #include <linux/nl80211.h>
++#include <linux/version.h>
++#include <linux/jiffies.h>
+ #include <linux/etherdevice.h>
+ #include <linux/crc32.h>
+ #include <linux/bitfield.h>
+@@ -1377,7 +1379,12 @@ void cfg80211_bss_age(struct cfg80211_registered_device *rdev,
+                       unsigned long age_secs)
+ {
+ 	struct cfg80211_internal_bss *bss;
++#if LINUX_VERSION_IS_GEQ(6,19,0)
+ 	unsigned long age_jiffies = secs_to_jiffies(age_secs);
++#else
++	unsigned long age_jiffies = min_t(unsigned long, age_secs,
++					  MAX_JIFFY_OFFSET / HZ) * HZ;
++#endif
+ 
+ 	spin_lock_bh(&rdev->bss_lock);
+ 	list_for_each_entry(bss, &rdev->bss_list, list)

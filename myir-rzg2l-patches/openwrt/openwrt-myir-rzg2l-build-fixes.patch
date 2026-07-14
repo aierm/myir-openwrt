@@ -1,0 +1,189 @@
+diff --git a/include/kernel-defaults.mk b/include/kernel-defaults.mk
+index bdfdaaa616..5238572b90 100644
+--- a/include/kernel-defaults.mk
++++ b/include/kernel-defaults.mk
+@@ -121,10 +121,10 @@ define Kernel/Configure/Default
+ 	$(SCRIPT_DIR)/kconfig.pl 'm+' '+' $(LINUX_DIR)/.config.target /dev/null $(LINUX_DIR)/.config.override > $(LINUX_DIR)/.config.set
+ 	$(call Kernel/SetNoInitramfs)
+ 	rm -rf $(KERNEL_BUILD_DIR)/modules
+-	cmp -s $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config.prev || { \
+-		cp $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config; \
+-		cp $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config.prev; \
+-	}
++	cmp -s $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config || \
++		cp $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config
++	cmp -s $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config.prev || \
++		cp $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config.prev
+ 	$(_SINGLE) [ -d $(LINUX_DIR)/user_headers ] || $(KERNEL_MAKE) $(if $(findstring uml,$(BOARD)),ARCH=$(ARCH)) INSTALL_HDR_PATH=$(LINUX_DIR)/user_headers headers_install
+ 	grep '=[ym]' $(LINUX_DIR)/.config.set | LC_ALL=C sort | $(MKHASH) md5 > $(LINUX_DIR)/.vermagic
+ endef
+diff --git a/package/kernel/linux/modules/video.mk b/package/kernel/linux/modules/video.mk
+index a7a5068a8c..ad7c533d71 100644
+--- a/package/kernel/linux/modules/video.mk
++++ b/package/kernel/linux/modules/video.mk
+@@ -336,7 +336,7 @@ $(eval $(call KernelPackage,drm-buddy))
+ define KernelPackage/drm-client-lib
+   SUBMENU:=$(VIDEO_MENU)
+   TITLE:=DRM client library setup helper
+-  DEPENDS:=@DISPLAY_SUPPORT +@LINUX_6_18 +kmod-drm +kmod-drm-kms-helper
++  DEPENDS:=@DISPLAY_SUPPORT @LINUX_6_18 +kmod-drm +kmod-drm-kms-helper
+   KCONFIG:=CONFIG_DRM_CLIENT_LIB
+   FILES:= $(LINUX_DIR)/drivers/gpu/drm/clients/drm_client_lib.ko
+   AUTOLOAD:=$(call AutoProbe,drm_client_lib)
+diff --git a/package/kernel/mac80211/patches/build/510-fix-scan-build-on-kernel-6.12.patch b/package/kernel/mac80211/patches/build/510-fix-scan-build-on-kernel-6.12.patch
+new file mode 100644
+index 0000000000..444b2b596b
+--- /dev/null
++++ b/package/kernel/mac80211/patches/build/510-fix-scan-build-on-kernel-6.12.patch
+@@ -0,0 +1,25 @@
++--- a/net/wireless/scan.c
+++++ b/net/wireless/scan.c
++@@ -11,7 +11,9 @@
++ #include <linux/module.h>
++ #include <linux/netdevice.h>
++ #include <linux/wireless.h>
++ #include <linux/nl80211.h>
+++#include <linux/version.h>
+++#include <linux/jiffies.h>
++ #include <linux/etherdevice.h>
++ #include <linux/crc32.h>
++ #include <linux/bitfield.h>
++@@ -1377,7 +1379,12 @@ void cfg80211_bss_age(struct cfg80211_registered_device *rdev,
++                       unsigned long age_secs)
++ {
++ 	struct cfg80211_internal_bss *bss;
+++#if LINUX_VERSION_IS_GEQ(6,19,0)
++ 	unsigned long age_jiffies = secs_to_jiffies(age_secs);
+++#else
+++	unsigned long age_jiffies = min_t(unsigned long, age_secs,
+++					  MAX_JIFFY_OFFSET / HZ) * HZ;
+++#endif
++ 
++ 	spin_lock_bh(&rdev->bss_lock);
++ 	list_for_each_entry(bss, &rdev->bss_list, list)
+diff --git a/package/kernel/mac80211/patches/build/511-fix-reg-faux-device-fallback-on-kernel-6.12.patch b/package/kernel/mac80211/patches/build/511-fix-reg-faux-device-fallback-on-kernel-6.12.patch
+new file mode 100644
+index 0000000000..cf77417443
+--- /dev/null
++++ b/package/kernel/mac80211/patches/build/511-fix-reg-faux-device-fallback-on-kernel-6.12.patch
+@@ -0,0 +1,80 @@
++--- a/net/wireless/reg.c
+++++ b/net/wireless/reg.c
++@@ -55,1 +55,6 @@
++-#include <linux/device/faux.h>
+++#include <linux/version.h>
+++#if LINUX_VERSION_IS_GEQ(6,19,0)
+++#include <linux/device/faux.h>
+++#else
+++#include <linux/platform_device.h>
+++#endif
++@@ -109,1 +114,36 @@
++-static struct faux_device *reg_fdev;
+++#if LINUX_VERSION_IS_GEQ(6,19,0)
+++static struct faux_device *reg_fdev;
+++
+++static inline struct device *reg_fdev_to_dev(struct faux_device *fdev)
+++{
+++	return &fdev->dev;
+++}
+++
+++static inline struct faux_device *reg_fdev_create(void)
+++{
+++	return faux_device_create("regulatory", NULL, NULL);
+++}
+++
+++static inline void reg_fdev_destroy(struct faux_device *fdev)
+++{
+++	faux_device_destroy(fdev);
+++}
+++#else
+++static struct platform_device *reg_fdev;
+++
+++static inline struct device *reg_fdev_to_dev(struct platform_device *pdev)
+++{
+++	return &pdev->dev;
+++}
+++
+++static inline struct platform_device *reg_fdev_create(void)
+++{
+++	return platform_device_register_simple("regulatory",
+++					       PLATFORM_DEVID_NONE, NULL, 0);
+++}
+++
+++static inline void reg_fdev_destroy(struct platform_device *pdev)
+++{
+++	platform_device_unregister(pdev);
+++}
+++#endif
++@@ -586,1 +621,2 @@
++-	ret = kobject_uevent_env(&reg_fdev->dev.kobj, KOBJ_CHANGE, env);
+++	ret = kobject_uevent_env(&reg_fdev_to_dev(reg_fdev)->kobj,
+++				 KOBJ_CHANGE, env);
++@@ -782,1 +818,2 @@
++-	if (request_firmware(&sig, "regulatory.db.p7s", &reg_fdev->dev))
+++	if (request_firmware(&sig, "regulatory.db.p7s",
+++			     reg_fdev_to_dev(reg_fdev)))
++@@ -1064,1 +1101,1 @@
++-				      &reg_fdev->dev, GFP_KERNEL,
+++				      reg_fdev_to_dev(reg_fdev), GFP_KERNEL,
++@@ -1080,1 +1117,2 @@
++-	err = request_firmware(&fw, "regulatory.db", &reg_fdev->dev);
+++	err = request_firmware(&fw, "regulatory.db",
+++			       reg_fdev_to_dev(reg_fdev));
++@@ -4280,1 +4318,1 @@
++-		faux_device_destroy(reg_fdev);
+++		reg_fdev_destroy(reg_fdev);
++@@ -4288,1 +4326,1 @@
++-			faux_device_destroy(reg_fdev);
+++			reg_fdev_destroy(reg_fdev);
++@@ -4317,2 +4355,2 @@
++-	reg_fdev = faux_device_create("regulatory", NULL, NULL);
++-	if (!reg_fdev)
+++	reg_fdev = reg_fdev_create();
+++	if (!reg_fdev || IS_ERR(reg_fdev))
++@@ -4347,3 +4385,3 @@
++-	dev_set_uevent_suppress(&reg_fdev->dev, true);
+++	dev_set_uevent_suppress(reg_fdev_to_dev(reg_fdev), true);
++ 
++-	faux_device_destroy(reg_fdev);
+++	reg_fdev_destroy(reg_fdev);
+diff --git a/package/network/config/netifd/patches/100-guard-pse-priority-ethtool-attrs.patch b/package/network/config/netifd/patches/100-guard-pse-priority-ethtool-attrs.patch
+new file mode 100644
+index 0000000000..3d1f1a8017
+--- /dev/null
++++ b/package/network/config/netifd/patches/100-guard-pse-priority-ethtool-attrs.patch
+@@ -0,0 +1,16 @@
++--- a/system-linux.c
+++++ b/system-linux.c
++@@ -2209,4 +2209,8 @@ static int cb_pse_get_reply(struct nl_msg *msg, void *arg)
+++#ifdef ETHTOOL_A_PSE_PRIO_MAX
++ 	if (tb[ETHTOOL_A_PSE_PRIO_MAX])
++ 		data->pse_prio_max = nla_get_u32(tb[ETHTOOL_A_PSE_PRIO_MAX]);
+++#endif
+++#ifdef ETHTOOL_A_PSE_PRIO
++ 	if (tb[ETHTOOL_A_PSE_PRIO])
++ 		data->pse_prio = nla_get_u32(tb[ETHTOOL_A_PSE_PRIO]);
+++#endif
++@@ -2393,2 +2393,4 @@ static int system_pse_set(struct device *dev, struct device_settings *s)
+++#ifdef ETHTOOL_A_PSE_PRIO
++ 	if (s->flags & DEV_OPT_PSE_PRIORITY)
++ 		nla_put_u32(msg, ETHTOOL_A_PSE_PRIO, s->pse_priority);
+++#endif
+diff --git a/package/system/ubus/patches/100-drop-format-nonliteral-werror.patch b/package/system/ubus/patches/100-drop-format-nonliteral-werror.patch
+new file mode 100644
+index 0000000000..d2fe6e5af7
+--- /dev/null
++++ b/package/system/ubus/patches/100-drop-format-nonliteral-werror.patch
+@@ -0,0 +1,12 @@
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -3,7 +3,7 @@
++ PROJECT(ubus C)
++ 
++ ADD_COMPILE_OPTIONS(-Wall -Werror)
++ IF(CMAKE_C_COMPILER_VERSION VERSION_GREATER 6)
++-  ADD_COMPILE_OPTIONS(-Wextra -Wformat -Werror=format-security -Werror=format-nonliteral)
+++  ADD_COMPILE_OPTIONS(-Wextra -Wformat -Werror=format-security)
++   ADD_COMPILE_OPTIONS($<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>)
++ ENDIF()
++ ADD_COMPILE_OPTIONS(-Os -g3 -Wmissing-declarations -Wno-unused-parameter)

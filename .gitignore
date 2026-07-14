@@ -5,6 +5,8 @@
 /dl
 /.config
 /.config.old
+/.configcopy
+/.config.pre-*.bak
 /.toolchain_build_ver
 /bin
 /build_dir
@@ -23,6 +25,11 @@
 key-build*
 private-key.pem
 public-key.pem
+/.codex
+/myir-mys-rzg2l-wifi-minimal.config
+/myir-rzg2l-patches.zip
+/target/linux/renesas.zip
+/*.zip
 *.orig
 *.rej
 *~

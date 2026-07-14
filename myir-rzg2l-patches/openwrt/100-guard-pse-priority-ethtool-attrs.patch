@@ -1,0 +1,16 @@
+--- a/system-linux.c
++++ b/system-linux.c
+@@ -2209,4 +2209,8 @@ static int cb_pse_get_reply(struct nl_msg *msg, void *arg)
++#ifdef ETHTOOL_A_PSE_PRIO_MAX
+ 	if (tb[ETHTOOL_A_PSE_PRIO_MAX])
+ 		data->pse_prio_max = nla_get_u32(tb[ETHTOOL_A_PSE_PRIO_MAX]);
++#endif
++#ifdef ETHTOOL_A_PSE_PRIO
+ 	if (tb[ETHTOOL_A_PSE_PRIO])
+ 		data->pse_prio = nla_get_u32(tb[ETHTOOL_A_PSE_PRIO]);
++#endif
+@@ -2393,2 +2393,4 @@ static int system_pse_set(struct device *dev, struct device_settings *s)
++#ifdef ETHTOOL_A_PSE_PRIO
+ 	if (s->flags & DEV_OPT_PSE_PRIORITY)
+ 		nla_put_u32(msg, ETHTOOL_A_PSE_PRIO, s->pse_priority);
++#endif

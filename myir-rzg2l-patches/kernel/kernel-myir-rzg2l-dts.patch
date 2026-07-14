@@ -1,0 +1,202 @@
+diff --git a/arch/arm64/boot/dts/renesas/Makefile b/arch/arm64/boot/dts/renesas/Makefile
+index 767b13b85e3d..bec3c23715b2 100644
+--- a/arch/arm64/boot/dts/renesas/Makefile
++++ b/arch/arm64/boot/dts/renesas/Makefile
+@@ -126,6 +126,9 @@ dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044c2-smarc-cru-csi-ov5645.dtbo
+ r9a07g044c2-smarc-cru-csi-ov5645-dtbs := r9a07g044c2-smarc.dtb r9a07g044c2-smarc-cru-csi-ov5645.dtbo
+ dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044c2-smarc-cru-csi-ov5645.dtb
+ 
++dtb-$(CONFIG_ARCH_R9A07G044) += mys-rzg2l-sdcard.dtb
++dtb-$(CONFIG_ARCH_R9A07G044) += mys-rzg2l-wifi.dtb
++
+ dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044l2-smarc.dtb
+ dtb-$(CONFIG_ARCH_R9A07G044) += r9a07g044l2-smarc-cru-csi-ov5645.dtbo
+ r9a07g044l2-smarc-cru-csi-ov5645-dtbs := r9a07g044l2-smarc.dtb r9a07g044l2-smarc-cru-csi-ov5645.dtbo
+diff --git a/arch/arm64/boot/dts/renesas/mys-rzg2l-smarc-base.dtsi b/arch/arm64/boot/dts/renesas/mys-rzg2l-smarc-base.dtsi
+new file mode 100644
+index 000000000000..2036eb73728c
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/mys-rzg2l-smarc-base.dtsi
+@@ -0,0 +1,107 @@
++// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++/*
++ * Device Tree Source for the MYiR MYS-RZG2L board
++ *
++ * This OpenWrt-oriented base keeps the Renesas 6.12 SMARC support as the
++ * baseline and only carries the board-specific bits needed for networking,
++ * storage, and USB.
++ */
++
++/dts-v1/;
++
++#define PMOD1_SER0	0
++#define PMOD_MTU3	0
++#define MTU3_COUNTER_Z_PHASE_SIGNAL	0
++#define POEGD_SUPPORT	0
++#define POE3_SUPPORT	0
++
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/pinctrl/rzg2l-pinctrl.h>
++
++#include "r9a07g044l2.dtsi"
++#include "rzg2l-smarc-som.dtsi"
++#include "rzg2l-smarc-pinfunction.dtsi"
++#include "rz-smarc-common.dtsi"
++#include "rzg2l-smarc.dtsi"
++
++&{/chosen} {
++	/delete-property/ bootargs;
++	stdout-path = "serial0:115200n8";
++};
++
++/ {
++	wifi_reg_on: regulator-wifi-reg-on {
++		compatible = "regulator-fixed";
++		regulator-name = "wl_reg_on";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		gpios = <&pinctrl RZG2L_GPIO(9, 0) GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		regulator-boot-on;
++		regulator-always-on;
++	};
++};
++
++/*
++ * The MYiR board uses different PHY addresses than the Renesas EVK.
++ * Leave PHY IRQs unset for now so the PHY framework can poll the link state.
++ */
++&phy0 {
++	reg = <4>;
++	/delete-property/ interrupts-extended;
++};
++
++&phy1 {
++	reg = <6>;
++	/delete-property/ interrupts-extended;
++};
++
++/*
++ * The vendor tree configures the eMMC pins at 3.3V on this board, unlike
++ * the EVK defaults in the upstream SMARC support.
++ */
++&sdhi0_emmc_pins {
++	sd0_emmc_data {
++		power-source = <3300>;
++	};
++
++	sd0_emmc_ctrl {
++		power-source = <3300>;
++	};
++
++	sd0_emmc_rst {
++		power-source = <3300>;
++	};
++};
++
++&snd_rzg2l {
++	status = "disabled";
++};
++
++&du {
++	status = "disabled";
++};
++
++&dsi {
++	status = "disabled";
++};
++
++&ssi0 {
++	status = "disabled";
++};
++
++&ssi1 {
++	status = "disabled";
++};
++
++&gpt4 {
++	status = "disabled";
++};
++
++&canfd {
++	status = "disabled";
++};
++
++&spi1 {
++	status = "disabled";
++};
+diff --git a/arch/arm64/boot/dts/renesas/mys-rzg2l-wifi.dts b/arch/arm64/boot/dts/renesas/mys-rzg2l-wifi.dts
+new file mode 100644
+index 000000000000..dbc6bac2fd57
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/mys-rzg2l-wifi.dts
+@@ -0,0 +1,33 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Device Tree Source for the MYiR MYS-RZG2L WiFi board variant
++ */
++
++/dts-v1/;
++#include "mys-rzg2l-smarc-base.dtsi"
++
++/ {
++	model = "MYiR MYS-RZG2L (WiFi)";
++	compatible = "myir,mys-rzg2l-wifi", "renesas,r9a07g044l2",
++		     "renesas,r9a07g044";
++};
++
++/*
++ * The onboard WiFi module is wired as a fixed 3.3V SDIO device.
++ */
++&sdhi1 {
++	pinctrl-0 = <&sdhi1_pins>;
++	/delete-property/ pinctrl-1;
++	pinctrl-names = "default";
++	vmmc-supply = <&wifi_reg_on>;
++	vqmmc-supply = <&reg_3p3v>;
++	bus-width = <4>;
++	disable-wp;
++	no-mmc;
++	no-sd;
++	non-removable;
++	no-1-8-v;
++	/delete-property/ sd-uhs-sdr50;
++	/delete-property/ sd-uhs-sdr104;
++	status = "okay";
++};
+diff --git a/arch/arm64/boot/dts/renesas/mys-rzg2l-sdcard.dts b/arch/arm64/boot/dts/renesas/mys-rzg2l-sdcard.dts
+new file mode 100644
+index 000000000000..809a5993f6f9
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/mys-rzg2l-sdcard.dts
+@@ -0,0 +1,30 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Device Tree Source for the MYiR MYS-RZG2L microSD board variant
++ */
++
++/dts-v1/;
++#include "mys-rzg2l-smarc-base.dtsi"
++
++/ {
++	model = "MYiR MYS-RZG2L (microSD)";
++	compatible = "myir,mys-rzg2l-sdcard", "renesas,r9a07g044l2",
++		     "renesas,r9a07g044";
++};
++
++/*
++ * The carrier keeps SDHI1 at 3.3V and uses a GPIO-based card-detect line.
++ */
++&sdhi1 {
++	pinctrl-0 = <&sdhi1_pins>;
++	/delete-property/ pinctrl-1;
++	pinctrl-names = "default";
++	vmmc-supply = <&reg_3p3v>;
++	vqmmc-supply = <&reg_3p3v>;
++	cd-gpios = <&pinctrl RZG2L_GPIO(19, 0) GPIO_ACTIVE_LOW>;
++	bus-width = <4>;
++	disable-wp;
++	/delete-property/ sd-uhs-sdr50;
++	/delete-property/ sd-uhs-sdr104;
++	status = "okay";
++};

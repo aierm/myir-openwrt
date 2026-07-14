@@ -1,0 +1,15 @@
+#!/bin/sh
+. /lib/functions.sh
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+
+case "$(board_name)" in
+	myir,mys-rzg2l-wifi)
+		ucidef_set_compat_version "1.1"
+		;;
+esac
+
+board_config_flush
+
+exit 0

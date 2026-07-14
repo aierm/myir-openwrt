@@ -1,0 +1,134 @@
+diff --git a/drivers/clk/renesas/rzg2l-cpg.c b/drivers/clk/renesas/rzg2l-cpg.c
+index 80aa156e87d1..f12a70cc7e7a 100644
+--- a/drivers/clk/renesas/rzg2l-cpg.c
++++ b/drivers/clk/renesas/rzg2l-cpg.c
+@@ -82,6 +82,15 @@
+ #define PLL5_INTIN_DEF		125
+ #define PLL5_FRACIN_DEF		0
+ 
++/*
++ * The CPG code always computes PLL5/DSI divider state, even on builds that
++ * intentionally omit the RZ/G2L display pipeline. Keep a default software
++ * value here so headless builds link cleanly; the DSI driver overrides it
++ * at runtime when that pipeline is enabled.
++ */
++int dsi_div_ab = 1;
++EXPORT_SYMBOL_GPL(dsi_div_ab);
++
+ /**
+  * struct clk_hw_data - clock hardware data
+  * @hw: clock hw
+diff --git a/drivers/gpu/drm/renesas/rz-du/rzg2l_mipi_dsi.c b/drivers/gpu/drm/renesas/rz-du/rzg2l_mipi_dsi.c
+index 1f090e05ca33..c595b33d05e8 100644
+--- a/drivers/gpu/drm/renesas/rz-du/rzg2l_mipi_dsi.c
++++ b/drivers/gpu/drm/renesas/rz-du/rzg2l_mipi_dsi.c
+@@ -33,8 +33,6 @@
+ /* Maximum DCS buffer size in external memory */
+ #define RZG2L_DCS_BUF_SIZE			128
+ 
+-int dsi_div_ab;
+-
+ struct rzg2l_mipi_dsi {
+ 	struct device *dev;
+ 	void __iomem *mmio;
+diff --git a/include/linux/irqchip/icu-t2h.h b/include/linux/irqchip/icu-t2h.h
+index c06d976dd68a..b3ce30769285 100644
+--- a/include/linux/irqchip/icu-t2h.h
++++ b/include/linux/irqchip/icu-t2h.h
+@@ -3,8 +3,22 @@
+ #ifndef __ICU_T2H_H__
+ #define __ICU_T2H_H__
+ 
+-int register_dmac_req_signal(struct platform_device *icu_dev,
+-					unsigned int dmac, unsigned int channel, int dmac_req);
++#include <linux/errno.h>
++
++struct platform_device;
+ 
++#ifdef CONFIG_RENESAS_RZT2H_IRQC
++int register_dmac_req_signal(struct platform_device *icu_dev,
++			     unsigned int dmac, unsigned int channel,
++			     int dmac_req);
++#else
++static inline int register_dmac_req_signal(struct platform_device *icu_dev,
++					   unsigned int dmac,
++					   unsigned int channel,
++					   int dmac_req)
++{
++	return -EOPNOTSUPP;
++}
+ #endif
+ 
++#endif
+diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
+index 35b886385f32..000c5eb978e7 100644
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -2224,9 +2224,7 @@ struct net_device {
+ #if IS_ENABLED(CONFIG_AX25)
+ 	struct ax25_dev	__rcu	*ax25_ptr;
+ #endif
+-#if IS_ENABLED(CONFIG_CFG80211)
+ 	struct wireless_dev	*ieee80211_ptr;
+-#endif
+ #if IS_ENABLED(CONFIG_IEEE802154) || IS_ENABLED(CONFIG_6LOWPAN)
+ 	struct wpan_dev		*ieee802154_ptr;
+ #endif
+diff --git a/include/uapi/linux/i3c/device.h b/include/uapi/linux/i3c/device.h
+index edbb14d4f185..eb512bc94514 100644
+--- a/include/uapi/linux/i3c/device.h
++++ b/include/uapi/linux/i3c/device.h
+@@ -1,4 +1,4 @@
+-/* SPDX-License-Identifier: GPL-2.0 */
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+ /*
+  * Copyright (c) 2019 Synopsys, Inc. and/or its affiliates.
+  *
+diff --git a/include/uapi/linux/i3c/i3cdev.h b/include/uapi/linux/i3c/i3cdev.h
+index f96498ebcb36..7f4bb836b63d 100644
+--- a/include/uapi/linux/i3c/i3cdev.h
++++ b/include/uapi/linux/i3c/i3cdev.h
+@@ -1,4 +1,4 @@
+-/* SPDX-License-Identifier: GPL-2.0 */
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+ /*
+  * Copyright (c) 2019 Synopsys, Inc. and/or its affiliates.
+  *
+diff --git a/net/batman-adv/hard-interface.c b/net/batman-adv/hard-interface.c
+index 96a412beab2d..02f86ff64f00 100644
+--- a/net/batman-adv/hard-interface.c
++++ b/net/batman-adv/hard-interface.c
+@@ -309,11 +309,9 @@ static bool batadv_is_cfg80211_netdev(struct net_device *net_device)
+ 	if (!net_device)
+ 		return false;
+ 
+-#if IS_ENABLED(CONFIG_CFG80211)
+ 	/* cfg80211 drivers have to set ieee80211_ptr */
+ 	if (net_device->ieee80211_ptr)
+ 		return true;
+-#endif
+ 
+ 	return false;
+ }
+diff --git a/net/wireless/Kconfig b/net/wireless/Kconfig
+index 10345388ad13..9abc302bcd85 100644
+--- a/net/wireless/Kconfig
++++ b/net/wireless/Kconfig
+@@ -26,6 +26,7 @@ config CFG80211
+ 	# using a different algorithm, though right now they shouldn't
+ 	# (this is here rather than below to allow it to be a module)
+ 	select CRYPTO_SHA256 if CFG80211_USE_KERNEL_REGDB_KEYS
++	select CFG80211_HEADERS
+ 	help
+ 	  cfg80211 is the Linux wireless LAN (802.11) configuration API.
+ 	  Enable this if you have a wireless device.
+@@ -36,6 +37,9 @@ config CFG80211
+ 
+ 	  When built as a module it will be called cfg80211.
+ 
++config CFG80211_HEADERS
++	bool
++
+ if CFG80211
+ 
+ config NL80211_TESTMODE

@@ -121,10 +121,10 @@ define Kernel/Configure/Default
 	$(SCRIPT_DIR)/kconfig.pl 'm+' '+' $(LINUX_DIR)/.config.target /dev/null $(LINUX_DIR)/.config.override > $(LINUX_DIR)/.config.set
 	$(call Kernel/SetNoInitramfs)
 	rm -rf $(KERNEL_BUILD_DIR)/modules
-	cmp -s $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config.prev || { \
-		cp $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config; \
-		cp $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config.prev; \
-	}
+	cmp -s $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config || \
+		cp $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config
+	cmp -s $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config.prev || \
+		cp $(LINUX_DIR)/.config.set $(LINUX_DIR)/.config.prev
 	$(_SINGLE) [ -d $(LINUX_DIR)/user_headers ] || $(KERNEL_MAKE) $(if $(findstring uml,$(BOARD)),ARCH=$(ARCH)) INSTALL_HDR_PATH=$(LINUX_DIR)/user_headers headers_install
 	grep '=[ym]' $(LINUX_DIR)/.config.set | LC_ALL=C sort | $(MKHASH) md5 > $(LINUX_DIR)/.vermagic
 endef

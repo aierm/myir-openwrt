@@ -1,0 +1,80 @@
+--- a/net/wireless/reg.c
++++ b/net/wireless/reg.c
+@@ -55,1 +55,6 @@
+-#include <linux/device/faux.h>
++#include <linux/version.h>
++#if LINUX_VERSION_IS_GEQ(6,19,0)
++#include <linux/device/faux.h>
++#else
++#include <linux/platform_device.h>
++#endif
+@@ -109,1 +114,36 @@
+-static struct faux_device *reg_fdev;
++#if LINUX_VERSION_IS_GEQ(6,19,0)
++static struct faux_device *reg_fdev;
++
++static inline struct device *reg_fdev_to_dev(struct faux_device *fdev)
++{
++	return &fdev->dev;
++}
++
++static inline struct faux_device *reg_fdev_create(void)
++{
++	return faux_device_create("regulatory", NULL, NULL);
++}
++
++static inline void reg_fdev_destroy(struct faux_device *fdev)
++{
++	faux_device_destroy(fdev);
++}
++#else
++static struct platform_device *reg_fdev;
++
++static inline struct device *reg_fdev_to_dev(struct platform_device *pdev)
++{
++	return &pdev->dev;
++}
++
++static inline struct platform_device *reg_fdev_create(void)
++{
++	return platform_device_register_simple("regulatory",
++					       PLATFORM_DEVID_NONE, NULL, 0);
++}
++
++static inline void reg_fdev_destroy(struct platform_device *pdev)
++{
++	platform_device_unregister(pdev);
++}
++#endif
+@@ -586,1 +621,2 @@
+-	ret = kobject_uevent_env(&reg_fdev->dev.kobj, KOBJ_CHANGE, env);
++	ret = kobject_uevent_env(&reg_fdev_to_dev(reg_fdev)->kobj,
++				 KOBJ_CHANGE, env);
+@@ -782,1 +818,2 @@
+-	if (request_firmware(&sig, "regulatory.db.p7s", &reg_fdev->dev))
++	if (request_firmware(&sig, "regulatory.db.p7s",
++			     reg_fdev_to_dev(reg_fdev)))
+@@ -1064,1 +1101,1 @@
+-				      &reg_fdev->dev, GFP_KERNEL,
++				      reg_fdev_to_dev(reg_fdev), GFP_KERNEL,
+@@ -1080,1 +1117,2 @@
+-	err = request_firmware(&fw, "regulatory.db", &reg_fdev->dev);
++	err = request_firmware(&fw, "regulatory.db",
++			       reg_fdev_to_dev(reg_fdev));
+@@ -4280,1 +4318,1 @@
+-		faux_device_destroy(reg_fdev);
++		reg_fdev_destroy(reg_fdev);
+@@ -4288,1 +4326,1 @@
+-			faux_device_destroy(reg_fdev);
++			reg_fdev_destroy(reg_fdev);
+@@ -4317,2 +4355,2 @@
+-	reg_fdev = faux_device_create("regulatory", NULL, NULL);
+-	if (!reg_fdev)
++	reg_fdev = reg_fdev_create();
++	if (!reg_fdev || IS_ERR(reg_fdev))
+@@ -4347,3 +4385,3 @@
+-	dev_set_uevent_suppress(&reg_fdev->dev, true);
++	dev_set_uevent_suppress(reg_fdev_to_dev(reg_fdev), true);
+ 
+-	faux_device_destroy(reg_fdev);
++	reg_fdev_destroy(reg_fdev);

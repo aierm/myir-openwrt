@@ -1,0 +1,11 @@
+# Keep the curated patch exports and notes. The copied source snapshots and
+# generated build outputs under this directory are for local reference only.
+*
+!.gitignore
+!README.md
+!kernel/
+!kernel/*.patch
+!openwrt/
+!openwrt/*.patch
+!openwrt/*.md
+!openwrt/myir-mys-rzg2l-wifi-minimal.config

@@ -1,0 +1,28 @@
+#!/bin/sh
+
+. /lib/functions/system.sh
+
+[ "$(board_name)" = "myir,mys-rzg2l-wifi" ] || exit 0
+
+uci -q batch <<-EOF
+	delete network.wan6
+
+	delete network.lan.ipaddr
+	delete network.lan.netmask
+	set network.lan.ipaddr='192.168.3.1'
+	set network.lan.netmask='255.255.255.0'
+	set network.lan.ip6assign='60'
+	set network.lan.multipath='off'
+
+	set network.wan.device='eth1'
+	set network.wan.proto='pppoe'
+	set network.wan.username=''
+	set network.wan.password=''
+	set network.wan.ipv6='auto'
+	set network.wan.norelease='1'
+	set network.wan.multipath='off'
+
+	commit network
+EOF
+
+exit 0
