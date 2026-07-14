@@ -67,7 +67,7 @@ target/linux/renesas/image/Makefile
 target/linux/renesas/image/armv8.mk
 target/linux/renesas/config-6.12
 target/linux/renesas/myir-mys-rzg2l-wifi-minimal.config
-target/linux/renesas/patches-6.12/731-net-permit-ieee80211_ptr-even-with-no-CFG82111-suppo.patch
+target/linux/renesas/patches-6.12/net-permit-ieee80211_ptr-even-with-no-CFG82111-suppo.patch
 target/linux/renesas/armv8/base-files/etc/board.d/01_leds
 target/linux/renesas/armv8/base-files/etc/board.d/02_network
 target/linux/renesas/armv8/base-files/etc/board.d/05_compat-version
