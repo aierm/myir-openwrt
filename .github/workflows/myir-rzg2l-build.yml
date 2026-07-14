@@ -37,13 +37,13 @@ jobs:
           sudo apt-get -qq update
 
       - name: Checkout OpenWrt tree
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: openwrt
           fetch-depth: 1
 
       - name: Checkout external kernel tree
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: aierm/myir-rz-linux-cip
           ref: rz-6.12-cip7
@@ -75,6 +75,7 @@ jobs:
         working-directory: openwrt
         run: |
           cp target/linux/renesas/myir-mys-rzg2l-wifi-minimal.config .config
+          sed -i "s|^CONFIG_EXTERNAL_KERNEL_TREE=.*|CONFIG_EXTERNAL_KERNEL_TREE=\"$GITHUB_WORKSPACE/rz_linux-cip\"|" .config
           make defconfig
           grep '^CONFIG_EXTERNAL_KERNEL_TREE=' .config
 
