@@ -10,12 +10,23 @@ on:
       - '.github/workflows/myir-rzg2l-build.yml'
       - 'README-MyIR-RZG2L-OpenWrt-6.12.md'
       - 'include/kernel-defaults.mk'
+      - 'configs/myir-rzg2l/**'
       - 'package/kernel/mac80211/patches/build/510-fix-scan-build-on-kernel-6.12.patch'
       - 'package/kernel/mac80211/patches/build/511-fix-reg-faux-device-fallback-on-kernel-6.12.patch'
       - 'package/network/config/netifd/patches/**'
+      - 'scripts/prepare-myir-config.sh'
       - 'package/system/ubus/patches/**'
       - 'target/linux/renesas/**'
   workflow_dispatch:
+    inputs:
+      profile:
+        description: Build profile
+        required: true
+        default: minimal
+        type: choice
+        options:
+          - minimal
+          - proxy-zh
 
 permissions:
   contents: write
@@ -29,6 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       DEBIAN_FRONTEND: noninteractive
+      MYIR_PROFILE: ${{ github.event.inputs.profile || 'minimal' }}
 
     steps:
       - name: Maximize disk space
@@ -58,6 +70,13 @@ jobs:
             python3-ply rsync unzip zlib1g-dev file wget subversion swig time \
             device-tree-compiler ccache qemu-utils
 
+      - name: Enable optional custom feeds
+        working-directory: openwrt
+        run: |
+          if [ "$MYIR_PROFILE" = "proxy-zh" ]; then
+            cat "$GITHUB_WORKSPACE/openwrt/configs/myir-rzg2l/feeds/proxy.feeds" >> feeds.conf.default
+          fi
+
       - name: Show checkout layout
         run: |
           pwd
@@ -74,9 +93,11 @@ jobs:
       - name: Prepare defconfig
         working-directory: openwrt
         run: |
-          cp target/linux/renesas/myir-mys-rzg2l-wifi-minimal.config .config
+          chmod +x scripts/prepare-myir-config.sh
+          ./scripts/prepare-myir-config.sh "$MYIR_PROFILE"
           sed -i "s|^CONFIG_EXTERNAL_KERNEL_TREE=.*|CONFIG_EXTERNAL_KERNEL_TREE=\"$GITHUB_WORKSPACE/rz_linux-cip\"|" .config
           make defconfig
+          echo "Using profile: $MYIR_PROFILE"
           grep '^CONFIG_EXTERNAL_KERNEL_TREE=' .config
 
       - name: Download sources
