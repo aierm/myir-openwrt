@@ -16,6 +16,7 @@ on:
       - 'package/network/config/netifd/patches/**'
       - 'scripts/prepare-myir-config.sh'
       - 'package/system/ubus/patches/**'
+      - 'scripts/gen_image_generic.sh'
       - 'target/linux/renesas/**'
   workflow_dispatch:
     inputs:
@@ -117,13 +118,131 @@ jobs:
           echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
           find "$TARGET_DIR" -maxdepth 2 -type f | sort
 
+      - name: Validate firmware artifacts
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+          BOARD_DIR="sysupgrade-myir_mys_rzg2l_wifi"
+          FACTORY="$TARGET_DIR/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sdcard.img.gz"
+          SYSUPGRADE="$TARGET_DIR/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz"
+          MANIFEST="$TARGET_DIR/openwrt-renesas-armv8-myir_mys_rzg2l_wifi.manifest"
+          FWTOOL="$PWD/staging_dir/host/bin/fwtool"
+          MCOPY="$PWD/staging_dir/host/bin/mcopy"
+          TMP_DIR="$(mktemp -d)"
+          METADATA="$(mktemp)"
+          CONTENTS="$(mktemp)"
+          trap 'rm -rf "$TMP_DIR"; rm -f "$METADATA" "$CONTENTS"' EXIT
+
+          test -s "$FACTORY"
+          test -s "$SYSUPGRADE"
+          test -x "$FWTOOL"
+          test -x "$MCOPY"
+
+          "$FWTOOL" -i "$METADATA" "$SYSUPGRADE"
+          "$FWTOOL" -q -T -i /dev/null "$SYSUPGRADE" |
+            gzip -dc | tar -tf - > "$CONTENTS"
+
+          for member in CONTROL kernel dtb root; do
+            test "$(grep -Fxc "$BOARD_DIR/$member" "$CONTENTS")" -eq 1
+          done
+
+          "$FWTOOL" -q -T -i /dev/null "$SYSUPGRADE" |
+            gzip -dc | tar -xf - -C "$TMP_DIR" \
+              "$BOARD_DIR/kernel" "$BOARD_DIR/dtb"
+
+          "$FWTOOL" -q -T -i /dev/null "$FACTORY" |
+            python3 -c '
+          import gzip
+          import struct
+          import sys
+
+          source = gzip.GzipFile(fileobj=sys.stdin.buffer)
+          output_path = sys.argv[1]
+          offset = 0
+
+          def read_exact(size):
+              global offset
+              chunks = []
+              remaining = size
+              while remaining:
+                  chunk = source.read(min(1024 * 1024, remaining))
+                  assert chunk, "factory image ended early"
+                  chunks.append(chunk)
+                  remaining -= len(chunk)
+                  offset += len(chunk)
+              return b"".join(chunks)
+
+          def skip_to(target):
+              assert target >= offset
+              read_exact(target - offset)
+
+          mbr = read_exact(512)
+          assert mbr[510:512] == b"\x55\xaa"
+
+          def partition(index):
+              entry = mbr[446 + index * 16:446 + (index + 1) * 16]
+              start, sectors = struct.unpack_from("<II", entry, 8)
+              return entry[0], entry[4], start, sectors
+
+          boot = partition(0)
+          root = partition(1)
+          assert boot == (0x80, 0x0c, 20480, 102400), boot
+          assert root[0] == 0 and root[1] == 0x83 and root[2] == 124928, root
+          assert root[3] > 0
+
+          skip_to(boot[2] * 512)
+          with open(output_path, "wb") as boot_file:
+              remaining = boot[3] * 512
+              while remaining:
+                  chunk = read_exact(min(1024 * 1024, remaining))
+                  boot_file.write(chunk)
+                  remaining -= len(chunk)
+
+          with open(output_path, "rb") as boot_file:
+              boot_file.seek(82)
+              assert boot_file.read(5) == b"FAT32"
+
+          skip_to(root[2] * 512 + 1080)
+          assert read_exact(2) == b"\x53\xef"
+          while source.read(1024 * 1024):
+              pass
+          source.close()
+          ' "$TMP_DIR/boot.fat"
+
+          "$MCOPY" -i "$TMP_DIR/boot.fat" ::/Image "$TMP_DIR/factory-Image"
+          "$MCOPY" -i "$TMP_DIR/boot.fat" ::/mys-rzg2l-wifi.dtb "$TMP_DIR/factory.dtb"
+          cmp "$TMP_DIR/factory-Image" "$TMP_DIR/$BOARD_DIR/kernel"
+          cmp "$TMP_DIR/factory.dtb" "$TMP_DIR/$BOARD_DIR/dtb"
+
+          test "$(dd if="$TMP_DIR/$BOARD_DIR/kernel" bs=1 skip=56 count=4 status=none | od -An -tx1 | tr -d ' \n')" = "41524d64"
+          test "$(dd if="$TMP_DIR/$BOARD_DIR/dtb" bs=1 count=4 status=none | od -An -tx1 | tr -d ' \n')" = "d00dfeed"
+
+          python3 - "$METADATA" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as metadata_file:
+              metadata = json.load(metadata_file)
+
+          assert metadata["compat_version"] == "1.1"
+          assert metadata["myir_e2fsprogs_min"] == "1.47.4"
+          assert "myir,mys-rzg2l-wifi" in metadata["new_supported_devices"]
+          assert metadata["version"]["target"] == "renesas/armv8"
+          assert metadata["version"]["board"] == "myir_mys_rzg2l_wifi"
+          PY
+
+          grep -Fx 'PKG_VERSION:=1.47.4' package/utils/e2fsprogs/Makefile
+          grep -Eq '^e2fsprogs - 1\.47\.4-' "$MANIFEST"
+          grep -Eq '^resize2fs - 1\.47\.4-' "$MANIFEST"
+          grep -Eq '^jsonfilter - ' "$MANIFEST"
+
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: myir-rzg2l-firmware-${{ github.sha }}
           path: |
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sdcard.img.gz
-            ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sdcard.img
+            ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-device-tree.dtb
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi.manifest
             ${{ env.TARGET_DIR }}/sha256sums
@@ -137,7 +256,7 @@ jobs:
         with:
           files: |
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sdcard.img.gz
-            ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sdcard.img
+            ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-device-tree.dtb
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi.manifest
             ${{ env.TARGET_DIR }}/sha256sums

@@ -258,14 +258,46 @@ make -j1 V=s
 当前设备定义期望输出：
 
 - `sdcard.img.gz`
+- `sysupgrade.tar.gz`
 - `device-tree.dtb`
 
 按当前设备名，产物路径应为：
 
 ```text
 bin/targets/renesas/armv8/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sdcard.img.gz
+bin/targets/renesas/armv8/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz
 bin/targets/renesas/armv8/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-device-tree.dtb
 ```
+
+### 8.1 在线升级
+
+只有文件名包含 `sysupgrade` 的压缩 tar 包可以上传到 LuCI 的固件升级页面：
+
+```text
+openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz
+```
+
+不要把 `sdcard.img.gz` 上传给 `sysupgrade`。它是完整磁盘镜像，不是在线升级包。
+当前厂商 U-Boot 从 SD 启动时还要求 SD 分区中存在 `boot.scr`；这里的
+`sdcard.img.gz` 不包含厂商恢复脚本，不能替代原来的恢复 SD 卡。
+
+MYIR eMMC 的运行布局是：
+
+```text
+eMMC boot0  BL2 + FIP/U-Boot
+eMMC p1     FAT32，保存 Image 和 mys-rzg2l-wifi.dtb
+eMMC p2     ext4 rootfs
+```
+
+板级在线升级只更新 p1 中的内核/DTB 和 p2 中的 rootfs，不覆盖 MBR、BL2、FIP 或 U-Boot。升级脚本会先切换到 ramfs，再按 rootfs、DTB、kernel 的顺序写入，并在重启前检查和扩展 ext4。
+
+注意首次迁移：执行升级的是当前固件中的 `/lib/upgrade/platform.sh`，不是升级包内的新脚本。从旧版本首次启用该功能时，必须最后使用一次厂商恢复 SD 卡流程，把包含新升级脚本的固件写入 eMMC。成功启动该版本以后，后续更新即可一直使用 LuCI 或命令行：
+
+```sh
+sysupgrade /tmp/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz
+```
+
+日常升级不会更新 boot0。需要更换 BL2、FIP 或 U-Boot 时，仍应使用恢复 SD 卡。
 
 如果手工解压镜像，还会看到：
 

@@ -34,6 +34,17 @@ define Build/boot-image
 
 endef
 
+define Build/myir-emmc-image
+	# Match the MYIR U-Boot layout: a FAT boot partition at 10 MiB,
+	# followed by the ext4 root filesystem at the next aligned boundary.
+	FAT_TYPE=32 KERNELPARTTYPE=0c PARTOFFSET=10m PADDING=1 \
+		$(SCRIPT_DIR)/gen_image_generic.sh \
+		$@ \
+		$(CONFIG_TARGET_KERNEL_PARTSIZE) $@.boot \
+		$(CONFIG_TARGET_ROOTFS_PARTSIZE) $(IMAGE_ROOTFS) \
+		1024
+endef
+
 ### Devices ###
 define Device/Default
   PROFILES := Default
