@@ -4,18 +4,16 @@ on:
   push:
     branches:
       - master
+      - codex/myir-sysupgrade
     tags:
-      - 'v*'
+      - 'myir-v*'
     paths:
       - '.github/workflows/myir-rzg2l-build.yml'
-      - 'README-MyIR-RZG2L-OpenWrt-6.12.md'
+      - 'feeds.conf.default'
       - 'include/kernel-defaults.mk'
       - 'configs/myir-rzg2l/**'
-      - 'package/kernel/mac80211/patches/build/510-fix-scan-build-on-kernel-6.12.patch'
-      - 'package/kernel/mac80211/patches/build/511-fix-reg-faux-device-fallback-on-kernel-6.12.patch'
-      - 'package/network/config/netifd/patches/**'
+      - 'package/**'
       - 'scripts/prepare-myir-config.sh'
-      - 'package/system/ubus/patches/**'
       - 'scripts/gen_image_generic.sh'
       - 'target/linux/renesas/**'
   workflow_dispatch:
@@ -41,7 +39,11 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       DEBIAN_FRONTEND: noninteractive
-      MYIR_PROFILE: ${{ github.event.inputs.profile || 'minimal' }}
+      MYIR_PROFILE: >-
+        ${{ github.event_name == 'workflow_dispatch' && inputs.profile ||
+            github.ref_type == 'tag' && vars.MYIR_RELEASE_PROFILE || 'minimal' }}
+      MYIR_KERNEL_REPOSITORY: ${{ vars.MYIR_KERNEL_REPOSITORY || 'aierm/myir-rz-linux-cip' }}
+      MYIR_KERNEL_REF: ${{ vars.MYIR_KERNEL_REF || 'rz-6.12-cip7' }}
 
     steps:
       - name: Maximize disk space
@@ -58,8 +60,8 @@ jobs:
       - name: Checkout external kernel tree
         uses: actions/checkout@v6
         with:
-          repository: aierm/myir-rz-linux-cip
-          ref: rz-6.12-cip7
+          repository: ${{ env.MYIR_KERNEL_REPOSITORY }}
+          ref: ${{ env.MYIR_KERNEL_REF }}
           path: rz_linux-cip
           fetch-depth: 1
 
@@ -236,28 +238,69 @@ jobs:
           grep -Eq '^resize2fs - 1\.47\.4-' "$MANIFEST"
           grep -Eq '^jsonfilter - ' "$MANIFEST"
 
+      - name: Package vendor recovery inputs
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+          BOARD_DIR="sysupgrade-myir_mys_rzg2l_wifi"
+          SYSUPGRADE="$TARGET_DIR/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz"
+          BUNDLE="$TARGET_DIR/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-vendor-recovery-files.tar.gz"
+          FWTOOL="$PWD/staging_dir/host/bin/fwtool"
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+
+          "$FWTOOL" -q -T -i /dev/null "$SYSUPGRADE" |
+            gzip -dc | tar -xf - -C "$TMP_DIR" \
+              "$BOARD_DIR/kernel" "$BOARD_DIR/dtb" "$BOARD_DIR/root"
+
+          install -m 0644 "$TMP_DIR/$BOARD_DIR/kernel" "$TMP_DIR/Image"
+          install -m 0644 "$TMP_DIR/$BOARD_DIR/dtb" "$TMP_DIR/mys-rzg2l-wifi.dtb"
+          install -m 0644 "$TMP_DIR/$BOARD_DIR/dtb" "$TMP_DIR/mys-rzg2l-sdcard.dtb"
+          install -m 0644 "$TMP_DIR/$BOARD_DIR/root" \
+            "$TMP_DIR/myir-image-full-myir-remi-1g.ext4"
+
+          tar -C "$TMP_DIR" -czf "$BUNDLE" \
+            Image mys-rzg2l-wifi.dtb mys-rzg2l-sdcard.dtb \
+            myir-image-full-myir-remi-1g.ext4
+          (
+            cd "$TARGET_DIR"
+            sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256"
+          )
+
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: myir-rzg2l-firmware-${{ github.sha }}
+          name: myir-rzg2l-${{ env.MYIR_PROFILE }}-${{ github.sha }}
           path: |
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sdcard.img.gz
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-device-tree.dtb
+            ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-vendor-recovery-files.tar.gz
+            ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-vendor-recovery-files.tar.gz.sha256
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi.manifest
             ${{ env.TARGET_DIR }}/sha256sums
             ${{ env.TARGET_DIR }}/*buildinfo
             ${{ env.TARGET_DIR }}/profiles.json
           if-no-files-found: error
+          compression-level: 0
 
       - name: Publish release assets
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          name: MYiR RZ/G2L ${{ github.ref_name }} (${{ env.MYIR_PROFILE }})
+          body: |
+            Build profile: `${{ env.MYIR_PROFILE }}`
+            OpenWrt commit: `${{ github.sha }}`
+            External kernel: `${{ env.MYIR_KERNEL_REPOSITORY }}@${{ env.MYIR_KERNEL_REF }}`
+          generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sdcard.img.gz
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-ext4-sysupgrade.tar.gz
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-device-tree.dtb
+            ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-vendor-recovery-files.tar.gz
+            ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi-vendor-recovery-files.tar.gz.sha256
             ${{ env.TARGET_DIR }}/openwrt-renesas-armv8-myir_mys_rzg2l_wifi.manifest
             ${{ env.TARGET_DIR }}/sha256sums
             ${{ env.TARGET_DIR }}/*buildinfo
