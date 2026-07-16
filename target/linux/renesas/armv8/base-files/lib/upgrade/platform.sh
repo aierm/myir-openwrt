@@ -4,9 +4,11 @@ MYIR_BOARD="myir,mys-rzg2l-wifi"
 MYIR_IMAGE_BOARD="myir_mys_rzg2l_wifi"
 MYIR_BOOT_MOUNT="/tmp/myir-sysupgrade-boot"
 MYIR_BOOT_MOUNTED=0
+MYIR_IMAGE_PREFIX=
+MYIR_IMAGE_PREFIX_BYTES=67108864
 
 if [ "$(board_name)" = "$MYIR_BOARD" ]; then
-	RAMFS_COPY_BIN="df e2fsck head jsonfilter resize2fs"
+	RAMFS_COPY_BIN="df e2fsck head jsonfilter mktemp resize2fs"
 	RAMFS_COPY_DATA="/etc/e2fsck.conf"
 	REQUIRE_IMAGE_METADATA=1
 fi
@@ -15,17 +17,10 @@ myir_payload() {
 	fwtool -q -T -i /dev/null "$1" | gzip -dc
 }
 
-myir_member_magic() {
-	myir_payload "$1" 2>/dev/null |
-		tar -xOf - "$2" 2>/dev/null |
-		dd bs=1 skip="$3" count="$4" 2>/dev/null |
+myir_prefix_member_magic() {
+	tar -xOf "$MYIR_IMAGE_PREFIX" "$1" 2>/dev/null |
+		dd bs=1 skip="$2" count="$3" 2>/dev/null |
 		hexdump -v -e '1/1 "%02x"'
-}
-
-myir_member_size() {
-	myir_payload "$1" 2>/dev/null |
-		tar -tvf - "$2" 2>/dev/null |
-		awk -v member="$2" '$NF == member { print $3; exit }'
 }
 
 myir_version_ge() {
@@ -67,47 +62,120 @@ myir_check_image_tools() {
 		return 1
 	}
 
-	fwtool -q -T -i /dev/null "$image" 2>/dev/null |
-		gzip -t 2>/dev/null
+	return 0
 }
 
-myir_prepare_image() {
-	local image="$1"
-	local contents control board_dir member
+myir_parse_image_prefix() {
+	local contents control board_dir member member_size
 
-	myir_check_image_tools "$image" || return 1
-	contents="$(myir_payload "$image" 2>/dev/null | tar -tf - 2>/dev/null)" ||
-		return 1
+	contents="$(tar -tvf "$MYIR_IMAGE_PREFIX" 2>/dev/null)"
+	[ -n "$contents" ] || return 1
 	board_dir="$(printf '%s\n' "$contents" |
-		sed -n 's#^\(sysupgrade-[^/]*/\)$#\1#p' | head -n 1)"
+		awk '$NF ~ "^sysupgrade-[^/]+/$" { print $NF; exit }')"
 	board_dir="${board_dir%/}"
 	[ "$board_dir" = "sysupgrade-${MYIR_IMAGE_BOARD}" ] || return 1
+	[ "$(printf '%s\n' "$contents" |
+		awk -v member="${board_dir}/" '$NF == member { count++ } END { print count + 0 }')" = "1" ] ||
+		return 1
 
 	for member in CONTROL kernel dtb root; do
-		[ "$(printf '%s\n' "$contents" |
-			grep -xc "${board_dir}/${member}")" = "1" ] || return 1
+		member_size="$(printf '%s\n' "$contents" |
+			awk -v member="${board_dir}/${member}" \
+				'$NF == member { count++; size = $3 } END { if (count == 1) print size; else exit 1 }')" ||
+			return 1
+		case "$member_size" in
+			'' | *[!0-9]*) return 1 ;;
+		esac
+		case "$member" in
+			kernel) MYIR_KERNEL_SIZE="$member_size" ;;
+			dtb) MYIR_DTB_SIZE="$member_size" ;;
+			root) MYIR_ROOT_SIZE="$member_size" ;;
+		esac
 	done
 
-	control="$(myir_payload "$image" 2>/dev/null |
-		tar -xOf - "${board_dir}/CONTROL" 2>/dev/null)" || return 1
+	control="$(tar -xOf "$MYIR_IMAGE_PREFIX" "${board_dir}/CONTROL" 2>/dev/null)"
 	[ "$control" = "BOARD=${MYIR_IMAGE_BOARD}" ] || return 1
 
-	[ "$(myir_member_magic "$image" "${board_dir}/kernel" 56 4)" = "41524d64" ] ||
+	[ "$(myir_prefix_member_magic "${board_dir}/kernel" 56 4)" = "41524d64" ] ||
 		return 1
-	[ "$(myir_member_magic "$image" "${board_dir}/dtb" 0 4)" = "d00dfeed" ] ||
+	[ "$(myir_prefix_member_magic "${board_dir}/dtb" 0 4)" = "d00dfeed" ] ||
 		return 1
-	[ "$(myir_member_magic "$image" "${board_dir}/root" 1080 2)" = "53ef" ] ||
+	[ "$(myir_prefix_member_magic "${board_dir}/root" 1080 2)" = "53ef" ] ||
 		return 1
 
-	MYIR_KERNEL_SIZE="$(myir_member_size "$image" "${board_dir}/kernel")"
-	MYIR_DTB_SIZE="$(myir_member_size "$image" "${board_dir}/dtb")"
-	MYIR_ROOT_SIZE="$(myir_member_size "$image" "${board_dir}/root")"
 	case "$MYIR_KERNEL_SIZE:$MYIR_DTB_SIZE:$MYIR_ROOT_SIZE" in
 		*[!0-9:]* | *::* | :* | *:) return 1 ;;
 	esac
 
 	MYIR_BOARD_DIR="$board_dir"
 	return 0
+}
+
+myir_cleanup_image_prefix() {
+	[ -n "$MYIR_IMAGE_PREFIX" ] && rm -f "$MYIR_IMAGE_PREFIX"
+	MYIR_IMAGE_PREFIX=
+	trap - HUP INT TERM
+}
+
+myir_prepare_image() {
+	local image="$1" rc
+
+	myir_check_image_tools "$image" || return 1
+	MYIR_IMAGE_PREFIX="$(mktemp /tmp/myir-sysupgrade-prefix.XXXXXX)" || return 1
+	trap 'myir_cleanup_image_prefix; exit 1' HUP INT TERM
+	# The sorted archive places root last; 64 MiB covers every header and checked magic.
+	myir_payload "$image" 2>/dev/null |
+		dd of="$MYIR_IMAGE_PREFIX" bs=1M count=64 iflag=fullblock 2>/dev/null
+	rc=$?
+	if [ "$rc" -ne 0 ] || [ ! -f "$MYIR_IMAGE_PREFIX" ] ||
+		[ "$(wc -c < "$MYIR_IMAGE_PREFIX")" != "$MYIR_IMAGE_PREFIX_BYTES" ]; then
+		myir_cleanup_image_prefix
+		return 1
+	fi
+	myir_parse_image_prefix
+	rc=$?
+	myir_cleanup_image_prefix
+	return "$rc"
+}
+
+myir_verify_image_payload() {
+	local image="$1" rc
+
+	set -o pipefail
+	myir_payload "$image" 2>/dev/null |
+		tar -tvf - 2>/dev/null |
+		awk -v board_dir="$MYIR_BOARD_DIR" \
+			-v kernel_size="$MYIR_KERNEL_SIZE" \
+			-v dtb_size="$MYIR_DTB_SIZE" \
+			-v root_size="$MYIR_ROOT_SIZE" '
+			$NF == board_dir "/" && substr($1, 1, 1) == "d" && $3 == 0 {
+				directory++
+				next
+			}
+			$NF == board_dir "/CONTROL" && substr($1, 1, 1) == "-" && $3 == 26 {
+				control++
+				next
+			}
+			$NF == board_dir "/kernel" && substr($1, 1, 1) == "-" && $3 == kernel_size {
+				kernel++
+				next
+			}
+			$NF == board_dir "/dtb" && substr($1, 1, 1) == "-" && $3 == dtb_size {
+				dtb++
+				next
+			}
+			$NF == board_dir "/root" && substr($1, 1, 1) == "-" && $3 == root_size {
+				root++
+				next
+			}
+			{ invalid = 1 }
+			END {
+				exit invalid || directory != 1 || control != 1 ||
+					kernel != 1 || dtb != 1 || root != 1
+			}' >/dev/null
+	rc=$?
+	set +o pipefail
+	return "$rc"
 }
 
 myir_find_upgrade_devices() {
@@ -209,7 +277,7 @@ myir_check_image() {
 		return 74
 	}
 
-	for tool in fwtool gzip tar e2fsck jsonfilter resize2fs; do
+	for tool in fwtool gzip tar e2fsck jsonfilter mktemp resize2fs; do
 		command -v "$tool" >/dev/null 2>&1 || {
 			echo "Required upgrade tool is missing: $tool"
 			return 74
@@ -240,6 +308,7 @@ myir_do_upgrade() {
 	myir_prepare_image "$image" || myir_upgrade_fail "invalid upgrade archive"
 	myir_find_upgrade_devices || myir_upgrade_fail "unexpected eMMC layout"
 	myir_check_capacity || myir_upgrade_fail "root filesystem image is too large"
+	myir_verify_image_payload "$image" || myir_upgrade_fail "corrupt upgrade archive"
 	myir_check_boot_space || myir_upgrade_fail "not enough free space in the boot partition"
 	umount "$MYIR_ROOTDEV" 2>/dev/null || true
 	awk -v device="$MYIR_ROOTDEV" '$1 == device { mounted = 1 } END { exit mounted ? 0 : 1 }' \
