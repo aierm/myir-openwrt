@@ -268,7 +268,7 @@ jobs:
           )
 
       - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: myir-rzg2l-${{ env.MYIR_PROFILE }}-${{ github.sha }}
           path: |
