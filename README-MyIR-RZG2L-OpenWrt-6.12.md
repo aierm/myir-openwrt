@@ -273,7 +273,7 @@ git -C package/luci-theme-argon checkout \
       1c686ed83cdf0b79684df45074111ff56f296a6b
 ```
 
-然后在自定义 profile 中加入：
+然后在[自定义 profile](https://github.com/aierm/myir-openwrt/blob/codex/myir-sysupgrade/configs/myir-rzg2l/profiles/proxy-zh.config) 中加入：
 
 ```config
 CONFIG_PACKAGE_luci-theme-argon=y
