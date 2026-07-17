@@ -129,8 +129,8 @@ sed -i 's|^CONFIG_EXTERNAL_KERNEL_TREE=.*|CONFIG_EXTERNAL_KERNEL_TREE="/absolute
 
 | profile | 内容 | rootfs 镜像大小 |
 | --- | --- | --- |
-| `minimal` | 板级基础系统、网络、WiFi、LuCI 和 sysupgrade 依赖 | 256 MiB |
-| `proxy-zh` | 中文 LuCI、代理软件及其依赖 | 512 MiB |
+| `minimal` | 板级基础系统、网络、WiFi、LuCI 和 sysupgrade 依赖,未配置其他软件| 256 MiB |
+| `proxy-zh` | 中文LuCI、passwall2、openclash、nikki代理软件及其依赖 | 512 MiB |
 
 构建 `minimal`：
 
@@ -220,7 +220,7 @@ git commit -m 'myir: add my-custom firmware profile'
 git push
 ```
 
-## 5. 从源码添加 LuCI 主题或普通软件包
+## 5. 从源码添加 LuCI 普通软件包
 
 ### 5.1 本地添加 luci-theme-argon
 
@@ -279,28 +279,50 @@ git -C package/luci-theme-argon checkout \
 CONFIG_PACKAGE_luci-theme-argon=y
 ```
 
-### 5.3 其他源码包的通用规则
+### 5.3 在 GitHub Actions构建中开启临时 SSH 用于临时调试
 
-添加前先检查是否已有同名包：
+修改[工作流](https://github.com/aierm/myir-openwrt/blob/codex/myir-sysupgrade/.github/workflows/myir-rzg2l-build.yml)的 `Update and install feeds`之后加入如下
+```yaml
+      - name: Update and install feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-```sh
-find package feeds -type d -name 'luci-theme-argon' -print 2>/dev/null
+      # 【新增步骤】在此处暂停并断开，为你生成一个 SSH 连接
+      - name: Setup Tmate SSH Debugger
+        uses: mxschmitt/action-tmate@v3
+        # 提示：调完配置后在SSH终端输入 'exit'，编译就会继续往下走
+
+      - name: Prepare defconfig
+        working-directory: openwrt
+        run: |
+          chmod +x scripts/prepare-myir-config.sh
+          ./scripts/prepare-myir-config.sh "$MYIR_PROFILE"
+          sed -i "s|^CONFIG_EXTERNAL_KERNEL_TREE=.*|CONFIG_EXTERNAL_KERNEL_TREE=\"$GITHUB_WORKSPACE/rz_linux-cip\"|" .config
+          export TERM=xterm
+          make defconfig
+
 ```
 
-本地 `package/` 与 feed 同时提供同名包会造成覆盖、冲突或选错版本。选择一种来源即可。
+提交代码并触发 GitHub Actions，流程运行到这一步时会暂停,展开 GitHub 的日志，会看到一行类似 ssh xxx@tmate.io的 SSH 字符串,复制该字符串，将其粘贴到本地终端，然后按 Enter 键。
 
-普通源码包有三种常见管理方式：
-
-1. 把包的 OpenWrt Makefile 和补丁直接维护在 `package/<name>/`。
-2. 固定 commit 后用 Git submodule 管理完整包目录。
-3. 在独立 feed 中维护多个包，再把 `src-git` 写入 `feeds.conf`。
-
-无论采用哪一种，都应固定源码 commit，保留许可证，使用真实源码哈希，并在目标 manifest 中确认包确实进入固件：
-
-```sh
-grep '^luci-theme-argon ' \
-  bin/targets/renesas/armv8/openwrt-renesas-armv8-myir_mys_rzg2l_wifi.manifest
+连接成功后,应该会有这样一段提示
+```text
+Tip: if you wish to use tmate only for remote access, run: tmate -F                                                                                                                     [0/0]
+To see the following messages again, run in a tmate session: tmate show-messages
+Press <q> or <ctrl-c> to continue
 ```
+我们按提示按下键盘上的 q 键（或按 Ctrl + C）退出 tmate 消息查看器，就能进入 workflows 的交互式 Linux 命令行,之后参考下面命令,minimal 可替换成自己的 profiles,运行 make menuconfig 后即可进入 openwrt 的图形交互界面。
+```sh
+cd openwrt
+chmod +x scripts/prepare-myir-config.sh
+./scripts/prepare-myir-config.sh "minimal"
+sed -i "s|^CONFIG_EXTERNAL_KERNEL_TREE=.*|CONFIG_EXTERNAL_KERNEL_TREE=\"$GITHUB_WORKSPACE/rz_linux-cip\"|" .config
+export TERM=xterm
+make menuconfig
+```
+调试确认完成后 SAVE 配置文件,退出交互界面,之后在终端输入"exit"断开连接,GitHub Actions 自动化工作流程就能够自动获取刚才的更改并继续构建固件。
 
 ## 6. 添加内核驱动、firmware 和 DTS
 
