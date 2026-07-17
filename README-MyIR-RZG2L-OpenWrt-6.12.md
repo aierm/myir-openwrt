@@ -261,7 +261,7 @@ git -C package/luci-theme-argon checkout \
 
 ### 5.2 让 GitHub Actions 也取得源码包
 
-如果不把第三方源码放进自己的 Git 仓库，可在工作流的 `Update and install feeds` 之前加入：
+如果不把第三方源码放进自己的 Git 仓库，可在[工作流](https://github.com/aierm/myir-openwrt/blob/codex/myir-sysupgrade/.github/workflows/myir-rzg2l-build.yml)的 `Update and install feeds` 之前加入：
 
 ```yaml
 - name: Checkout custom source packages
