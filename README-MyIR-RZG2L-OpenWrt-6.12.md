@@ -273,27 +273,11 @@ git -C package/luci-theme-argon checkout \
       1c686ed83cdf0b79684df45074111ff56f296a6b
 ```
 
-更严格的长期维护方式是使用 Git submodule：
+然后在自定义 profile 中加入：
 
-```sh
-git submodule add https://github.com/jerrykuku/luci-theme-argon.git \
-  package/luci-theme-argon
-git -C package/luci-theme-argon checkout \
-  1c686ed83cdf0b79684df45074111ff56f296a6b
-git add .gitmodules package/luci-theme-argon
-git commit -m 'packages: add pinned luci-theme-argon'
+```config
+CONFIG_PACKAGE_luci-theme-argon=y
 ```
-
-采用 submodule 后，把 OpenWrt checkout 改为：
-
-```yaml
-with:
-  path: openwrt
-  fetch-depth: 1
-  submodules: recursive
-```
-
-不要直接把带有内部 `.git` 目录的 clone 当普通目录提交，否则主仓库只会记录一个不完整的嵌套仓库状态。
 
 ### 5.3 其他源码包的通用规则
 
