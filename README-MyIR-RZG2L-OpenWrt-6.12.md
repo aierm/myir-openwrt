@@ -305,11 +305,12 @@ CONFIG_PACKAGE_luci-theme-argon=y
 
 ```
 
-提交代码并触发 GitHub Actions，流程运行到这一步时会暂停,展开 GitHub 的日志，会看到一行类似 ssh xxx@tmate.io的 SSH 字符串,复制该字符串，将其粘贴到本地终端，然后按 Enter 键。
+提交代码并触发 GitHub Actions，流程运行到这一步时会暂停,展开 GitHub 的日志，会看到一行类似 ssh xxx@tmate.io的 SSH 字符串,复制该字符串，粘贴到本地终端连接 SSH
+<img width="1910" height="989" alt="截图_2026-07-17_11-01-10" src="https://github.com/user-attachments/assets/10690c19-498c-43b3-8bef-421afc72faa0" />
 
 连接成功后,应该会有这样一段提示
 ```text
-Tip: if you wish to use tmate only for remote access, run: tmate -F                                                                                                                     [0/0]
+Tip: if you wish to use tmate only for remote access, run: tmate -F
 To see the following messages again, run in a tmate session: tmate show-messages
 Press <q> or <ctrl-c> to continue
 ```
@@ -322,6 +323,7 @@ sed -i "s|^CONFIG_EXTERNAL_KERNEL_TREE=.*|CONFIG_EXTERNAL_KERNEL_TREE=\"$GITHUB_
 export TERM=xterm
 make menuconfig
 ```
+<img width="1454" height="465" alt="截图_2026-07-17_11-00-24-1" src="https://github.com/user-attachments/assets/8384d290-6711-4049-b41a-5729e7953706" />
 调试确认完成后 SAVE 配置文件,退出交互界面,之后在终端输入"exit"断开连接,GitHub Actions 自动化工作流程就能够自动获取刚才的更改并继续构建固件。
 
 ## 6. 添加内核驱动、firmware 和 DTS
