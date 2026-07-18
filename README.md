@@ -3,7 +3,7 @@
 [![Build MYiR RZ/G2L Firmware](https://github.com/aierm/myir-openwrt/actions/workflows/myir-rzg2l-build.yml/badge.svg?branch=codex%2Fmyir-sysupgrade)](https://github.com/aierm/myir-openwrt/actions/workflows/myir-rzg2l-build.yml)
 [![Releases](https://img.shields.io/github/v/release/aierm/myir-openwrt?display_name=tag)](https://github.com/aierm/myir-openwrt/releases)
 
-这是面向 MYiR MYS-RZG2L WiFi 开发板的 OpenWrt 6.12 适配项目。项目使用 Renesas CIP 外部内核，支持板载 RTL8822CS、eMMC 启动、完整 SD/eMMC 磁盘镜像，以及针对厂商分区布局实现的安全 sysupgrade。
+这是面向 MYiR MYS-RZG2L Remi Pi 开发板的 OpenWrt 6.12 适配项目。项目使用 Renesas CIP 外部内核，支持板载 RTL8822CS、eMMC 启动、完整 SD/eMMC 磁盘镜像，以及针对厂商分区布局实现的安全 sysupgrade。
 
 > 当前应使用 **`codex/myir-sysupgrade`** 分支。仓库的旧 `master` 基线不包含本项目的 sysupgrade 实现，不要用旧分支生成在线升级包。
 
@@ -15,7 +15,7 @@
 
 ## 已验证功能
 
-- MYiR MYS-RZG2L WiFi 开发板从 eMMC 启动
+- MYiR MYS-RZG2L Remi Pi 开发板从 eMMC 启动
 - Linux 6.12 Renesas CIP 外部内核
 - `eth0` LAN，默认地址 `192.168.3.1`
 - `eth1` PPPoE WAN
