@@ -1,4 +1,4 @@
-# MYiR MYS-RZG2L OpenWrt 6.12 完整使用与定制指南
+# MYiR MYS-RZG2L Remi Pi OpenWrt 6.12 完整使用与定制指南
 
 本文面向以下几类使用者：
 
@@ -10,14 +10,14 @@
 
 当前可用源码分支是 [`codex/myir-sysupgrade`](https://github.com/aierm/myir-openwrt/tree/codex/myir-sysupgrade)。旧 `master` 基线不包含本项目的 MYiR sysupgrade 实现，不应拿来生成在线升级固件。
 
-2026-07-16 已在真实 MYS-RZG2L WiFi 板上完成 `proxy-zh` profile 的 LuCI sysupgrade，经过验证的 OpenWrt commit 为 `41f7f75c3453d6cd32c8ed1d36e15b2bcf86accf`，对应的 [GitHub Actions 构建](https://github.com/aierm/myir-openwrt/actions/runs/29472379194)已通过镜像结构、内核、DTB、ext4 和元数据校验。固件已发布为 [myir-v2026.07.16-1](https://github.com/aierm/myir-openwrt/releases/tag/myir-v2026.07.16-1)。
+2026-07-16 已在真实 MYS-RZG2L 瑞米派开发板上完成 `proxy-zh` profile 的 LuCI sysupgrade，经过验证的 OpenWrt commit 为 `41f7f75c3453d6cd32c8ed1d36e15b2bcf86accf`，对应的 [GitHub Actions 构建](https://github.com/aierm/myir-openwrt/actions/runs/29472379194)已通过镜像结构、内核、DTB、ext4 和元数据校验。固件已发布为 [myir-v2026.07.16-1](https://github.com/aierm/myir-openwrt/releases/tag/myir-v2026.07.16-1)。
 
 ## 1. 支持范围与磁盘布局
 
 目前只对以下板型合同做了完整适配：
 
 ```text
-设备：MYiR MYS-RZG2L WiFi
+设备：MYiR MYS-RZG2L Remi Pi
 compatible：myir,mys-rzg2l-wifi
 OpenWrt profile：myir_mys_rzg2l_wifi
 启动根分区：/dev/mmcblk0p2
